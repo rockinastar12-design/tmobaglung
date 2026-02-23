@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="ne">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TMO Baglung - Patke System</title>
+    
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.css" />
+    
+    <style>
+        :root { --blue: #003893; --red: #dc3545; --green: #1b5e20; --gold: #fbc02d; }
+        body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', Arial, sans-serif; background: #f4f7f9; }
+
+        .header { background: var(--blue); color: white; padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; z-index: 1002; }
+        .main-view { display: flex; height: calc(100vh - 65px); }
+        .sidebar { width: 420px; background: white; padding: 15px; box-shadow: 2px 0 15px rgba(0,0,0,0.1); z-index: 1001; overflow-y: auto; }
+        #map { flex: 1; height: 100%; z-index: 1; }
+
+        .card { background: white; border: 1px solid #ddd; padding: 15px; border-radius: 8px; margin-bottom: 12px; }
+        .admin-section { background: #fffde7; border: 2px solid var(--gold); border-radius: 10px; padding: 15px; margin-bottom: 15px; display: none; }
+        
+        .required-label::after { content: " *"; color: var(--red); }
+        .input-box { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; margin-top: 5px; margin-bottom: 10px; box-sizing: border-box; }
+        
+        .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+        .upload-box { border: 2px dashed #bbb; padding: 10px; text-align: center; border-radius: 8px; cursor: pointer; background: #fafafa; position: relative; }
+        .upload-box.done { border-color: var(--green); background: #e8f5e9; }
+        .preview-thumb { width: 100%; height: 60px; object-fit: cover; margin-top: 5px; display: none; border-radius: 4px; }
+
+        .btn { border: none; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; transition: 0.2s; font-size: 14px; }
+        .btn-blue { background: var(--blue); color: white; }
+        .btn-green { background: var(--green); color: white; }
+
+        .task-card { background: white; border: 1px solid #ccc; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 6px solid var(--blue); }
+        .admin-doc-img { width: 90px; height: 65px; object-fit: cover; border-radius: 4px; border: 1px solid #aaa; margin-right: 5px; cursor: pointer; }
+
+        @media print { .no-print, #map, .sidebar, .header { display: none !important; } .print-document { display: block !important; } }
+        .print-document { display: none; width: 210mm; padding: 20mm; margin: auto; background: white; }
+    </style>
+</head>
+<body>
+
+<div class="header no-print">
+    <div style="display:flex; align-items:center; gap:12px;">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Emblem_of_Nepal.svg/1200px-Emblem_of_Nepal.svg.png" height="35">
+        <h1 style="font-size:16px; margin:0;">TMO Baglung - Patke System</h1>
+    </div>
+    <button onclick="loginPanel()" style="background:white; color:var(--blue); border:none; padding:5px 12px; border-radius:15px; cursor:pointer; font-weight:bold;">Staff Login</button>
+</div>
+
+<div class="main-view no-print">
+    <div class="sidebar">
+        <div id="staff-panel" class="admin-section">
+            <h4 style="margin-top:0;">📋 पेन्डिङ अनुरोधहरू</h4>
+            <div id="pending-list"></div>
+        </div>
+
+        <div id="public-portal">
+            <div class="card">
+                <label class="required-label" style="font-size:13px; font-weight:bold;">१. सवारी विवरण (सबै अनिवार्य):</label>
+                <input type="text" id="v-no" class="input-box" placeholder="सवारी साधन नम्बर">
+                <input type="text" id="l-no" class="input-box" placeholder="इजाजत पत्र (License) नम्बर">
+                <div id="search-from" style="margin-top:5px;"></div>
+                <div id="search-to" style="margin-top:5px;"></div>
+            </div>
+
+            <div class="card">
+                <label class="required-label" style="font-size:13px; font-weight:bold;">२. डकुमेन्ट अपलोड (दुवै अनिवार्य):</label>
+                <div class="upload-grid">
+                    <div id="box-lic" class="upload-box" onclick="document.getElementById('lic-file').click()">
+                        <span style="font-size:10px;">🪪 इजाजत पत्र</span>
+                        <input type="file" id="lic-file" style="display:none;" accept="image/*" onchange="previewDoc('lic-file', 'lic-prev', 'box-lic')">
+                        <img id="lic-prev" class="preview-thumb">
+                    </div>
+                    <div id="box-fit" class="upload-box" onclick="document.getElementById('fit-file').click()">
+                        <span style="font-size:10px;">📄 जाँचपास फोटो</span>
+                        <input type="file" id="fit-file" style="display:none;" accept="image/*" onchange="previewDoc('fit-file', 'fit-prev', 'box-fit')">
+                        <img id="fit-prev" class="preview-thumb">
+                    </div>
+                </div>
+            </div>
+
+            <button id="req-btn" class="btn btn-blue" onclick="sendRequest()">अनुरोध पठाउनुहोस्</button>
+            <button id="print-btn" class="btn btn-green" style="display:none; margin-top:10px;" onclick="window.print()">रसिद प्रिन्ट गर्नुहोस्</button>
+        </div>
+    </div>
+    <div id="map"></div>
+</div>
+
+<div class="print-document">
+    <div style="border: 5px double var(--blue); padding: 40px; text-align: center; min-height: 250mm;">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Emblem_of_Nepal.svg/1200px-Emblem_of_Nepal.svg.png" height="80">
+        <h2>यातायात व्यवस्था कार्यालय, बागलुङ</h2>
+        <hr>
+        <h1>पटके इजाजत–पत्र</h1>
+        <div style="text-align: left; font-size: 22px; line-height: 2.5; margin-top: 50px;">
+            <p><b>सवारी साधन नं:</b> <span id="p-v-no">............</span></p>
+            <p><b>इजाजत पत्र नं:</b> <span id="p-l-no">............</span></p>
+            <p><b>स्वीकृत गर्ने अधिकारी:</b> <span id="p-officer">...</span></p>
+        </div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+<script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
+
+<script>
+    var map = L.map('map').setView([28.2721, 83.5901], 10);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    var control = L.Routing.control({ waypoints: [null, null], show: false }).addTo(map);
+
+    let requests = [];
+    let docs = { lic: null, fit: null };
+    let loggedInUser = null;
+
+    function setupSearch(id) {
+        let g = L.Control.geocoder({ defaultMarkGeocode: false, placeholder: "Location..." }).on('markgeocode', function(e) {
+            let idx = (id === 'search-from' ? 0 : 1);
+            control.spliceWaypoints(idx, 1, e.geocode.center);
+        }).addTo(map);
+        document.getElementById(id).appendChild(g.getContainer());
+    }
+    setupSearch('search-from');
+    setupSearch('search-to');
+
+    function previewDoc(inputId, prevId, boxId) {
+        const file = document.getElementById(inputId).files[0];
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            docs[inputId === 'lic-file' ? 'lic' : 'fit'] = reader.result;
+            document.getElementById(prevId).src = reader.result;
+            document.getElementById(prevId).style.display = 'block';
+            document.getElementById(boxId).classList.add('done');
+        }
+        if (file) reader.readAsDataURL(file);
+    }
+
+    function sendRequest() {
+        const vNo = document.getElementById('v-no').value.trim();
+        const lNo = document.getElementById('l-no').value.trim();
+        const scriptURL = 'https://script.google.com/macros/s/AKfycbwt2e8VG8wJr0c51FyYtKFPElK33A79G3UQlDs_1TlRb5CY395UzlMcnyT-zDbRJJc/exec';
+
+        if (!vNo || !lNo || !docs.lic || !docs.fit) {
+            alert("कृपया सबै अनिवार्य विवरण र कागजात भर्नुहोस्!");
+            return;
+        }
+
+        document.getElementById('req-btn').innerText = "पठाउँदै...";
+        document.getElementById('req-btn').disabled = true;
+
+        const payload = { vNo, lNo, licImg: docs.lic, fitImg: docs.fit };
+
+        fetch(scriptURL, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        })
+        .then(response => {
+            alert("डाटाबेसमा सुरक्षित भयो र अनुरोध स्टाफ प्यानलमा पठाइयो!");
+            requests.push(payload);
+            renderTasks();
+            
+            // प्रिन्टको लागि डाटा सेट गर्ने
+            document.getElementById('p-v-no').innerText = vNo;
+            document.getElementById('p-l-no').innerText = lNo;
+            
+            document.getElementById('req-btn').innerText = "अनुरोध पठाउनुहोस्";
+            document.getElementById('req-btn').disabled = false;
+        })
+        .catch(error => {
+            alert('Error: ' + error.message);
+            document.getElementById('req-btn').disabled = false;
+            document.getElementById('req-btn').innerText = "अनुरोध पठाउनुहोस्";
+        });
+    }
+
+    function loginPanel() {
+        if(prompt("Staff PIN:") === "1234") {
+            loggedInUser = "Officer_Baglung";
+            document.getElementById('staff-panel').style.display = 'block';
+            renderTasks();
+        }
+    }
+
+    function renderTasks() {
+        if(!loggedInUser) return;
+        const list = document.getElementById('pending-list');
+        list.innerHTML = requests.length === 0 ? "<p>कुनै अनुरोध छैन।</p>" : "";
+        requests.forEach((r, i) => {
+            list.innerHTML += `
+                <div class="task-card">
+                    <b>${r.vNo}</b> (Lic: ${r.lNo})<br>
+                    <div style="margin-top:8px;">
+                        <img src="${r.licImg}" class="admin-doc-img" onclick="window.open(this.src)">
+                        <img src="${r.fitImg}" class="admin-doc-img" onclick="window.open(this.src)">
+                    </div>
+                    <button onclick="approve(${i})" class="btn btn-green" style="margin-top:10px; padding:6px;">Verify & Approve</button>
+                </div>
+            `;
+        });
+    }
+
+    function approve(index) {
+        document.getElementById('p-officer').innerText = loggedInUser;
+        document.getElementById('print-btn').style.display = 'block';
+        document.getElementById('req-btn').style.display = 'none';
+        requests.splice(index, 1);
+        renderTasks();
+        alert("प्रमाणित भयो! अब रसिद प्रिन्ट गर्न सक्नुहुन्छ।");
+    }
+</script>
+
+</body>
+</html>
